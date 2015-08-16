@@ -1,0 +1,297 @@
+#!/bin/bash
+# filename: stats
+# By: Tara Massey
+# Description: Program calculates the averages and medians from an input
+# file of numbers. Averages are rounded up where appropriate. When
+# determining the median, the larger of the two numbers is selected. The
+# program determines values based off rows or columns, per user choice.
+#-------------------------------------------------
+
+
+# ******************************************
+# 		Set Up
+# *****************************************
+
+# creation of temporary file and boolean values for error checking
+# Per specifications, Use temporariy file to current working directory
+# must use process id as part of name, and be removed when done
+tempStorage=$$temp
+rowTruth=false
+colTruth=false
+
+
+# *****************************************
+# 		Error Catching
+# ****************************************
+
+# include traps
+# per specifications, trap should remove temp file
+# per specifications, any error exits with value of 1
+trap "rm -f $tempStorage; exit 1" INT HUP TERM
+
+
+# include number of parameters
+# per specifications,  all error messages sent to standard error
+# per specifications, any error exits with value of 1
+if [ "$#" -lt 1 ]
+then
+	echo "Usage: stats {-rows|-cols} [file]" 1>&2
+	exit 1
+fi
+
+if [ "$#" -gt 2 ]
+then
+	echo "Usage: stats {-rows|-cols} [file]" 1>&2
+	exit 1
+fi
+
+
+
+# must start with r or c to be valid
+# Citation: Fedorqui, StackOverflow.com, Linux - How to Extract A Substring in Bash
+# stackoverflow.com/questions/i16484972/how-to-extract-a-substring-in-bash
+if [ "${1:0:2}" != '-r' ] && [ "${1:0:2}" != '-c' ]
+then
+	echo "Usage: stats {-rows|-cols} [file]" >&2
+	exit 1
+fi 
+
+if [ "${1:0:2}" == '-r' ]
+then
+	rowTruth=true
+fi
+
+if [ "${1:0:2}" == '-c' ]
+then
+	colTruth=true
+fi  
+
+
+# is valid request, make sure file can be read
+# per specifications,  all error messages sent to standard error
+# per specifications, any error exits with value of 1
+if [ "$#" -eq 2 ]
+then
+	if [ ! -r "$2" ]
+	then
+		echo "stats: cannot read $2" >&2
+		exit 1
+	fi
+fi
+
+
+#******************************************************
+#		Calculations
+# Need to check to see if it's rows or columns
+# Need a sum of the row or column and a count of elements
+# Calculations must be done in shell, averages should round up
+#*****************************************************
+
+# read the data using "read" and store it in our temp
+# Citation: Referenced "The cat command", www.linfo.org/cat.html to figure out
+# how to copy over an entire file to a new storage location
+	# append, or it will write over
+if [ "$#" -eq 1 ]
+then
+	while read line
+	do
+		echo $line >> $tempStorage
+	done
+else
+	cat $2 > $tempStorage
+fi
+
+
+#*********************************************
+#	Row Calculations
+#********************************************
+if [ $rowTruth == true ]
+then
+
+	# print the headers
+	echo "Average Median"
+
+	while read line
+	do
+		#Keep it from accumulating sum and count
+		numCount=0
+		sum=0
+		middle=0
+		median=0
+
+		# get sum and amount in line
+		for i in $line
+		do
+			sum=$(expr $sum + $i)
+			numArray[$numCount]=$i
+			numCount=$(expr $numCount + 1)
+		done
+
+		
+		# Average the numbers
+		# must round up where required.
+		# per specifications, output set to standard output
+		# Citation: Kaz. "Round a Divided Number in Bash." StackOverflow.com. 
+		#stackoverflow.com/questions/2395284/round-a-divided-number-in-bash
+		avg=$((($sum + $numCount / 2) / $numCount))
+
+
+		# Get Median
+		# per specifications, if even count, median is the larger of the two numbers
+		# per specifications, output se tto standard output
+		remainder=$(($numCount % 2))
+
+		# sort with piping caused errors when the number input went from 2 digits to 3 (number 100), so did a manual selection sort
+		# citation for sort: Kumar, Sandeep. "Selection Sort using Shell." It's all about Linux.
+		#technicalworldforyou.blogspot.com/2012/selction-sort-using-shell-script.html
+		for ((i=0; i<$numCount-1; i++))
+		do
+			small=${numArray[$i]}
+			index=$i
+			for ((j=i+1; j<$numCount; j++))
+			do
+				if ((numArray[j]<small))
+				then
+					small=${numArray[$j]}
+					index=$j
+				fi
+			done
+			temp=${numArray[$i]}
+			numArray[$i]=${numArray[$index]}
+			numArray[$index]=$temp
+		done
+		
+		# odd number as remainder
+		if [ $remainder != 0 ]
+		then
+			middle=$(expr $numCount / 2)
+			middle=$(expr $middle)
+			median=${numArray[$middle]}
+
+		fi
+
+		# even number as remainder
+		if [ $remainder == 0 ]
+		then
+			# find near the middle in placement
+			middle=$(expr $numCount / 2)	
+			# get the two values for comparison
+			median=${numArray[$middle]}
+		fi
+	
+	# print
+	echo $avg "     " $median
+	done < $tempStorage
+fi
+
+
+
+#****************************************************
+#		Column Calculations
+#****************************************************
+if [ $colTruth == true ]
+then
+	# get the number of columns, for total amount of iterations
+	totalCols=$(head -n 1 $tempStorage | wc -w)
+	colNum=0
+
+	# read file once for each column, storing in an array, then inc column
+	while [ $colNum -lt $totalCols ]
+	do
+		#Keep it from accumulating sum and count
+		numCount=0
+		sum=0
+		middle=0
+		median=0
+
+		#Make an array of lines, and an array of the sought after column
+		while read line
+		do
+			rowArray=($line)
+			numArray[$numCount]=${rowArray[$colNum]}
+			numCount=$(expr $numCount + 1)				# increases array position, and counts elements in column
+		done < $tempStorage	
+
+
+		# Sum and Average the numbers
+		# must round up where required.
+		# per specifications, output set to standard output
+		for i in ${numArray[@]}
+		do
+			sum=$(expr $sum + $i)
+		done
+
+		# Citation: Kaz. "Round a Divided Number in Bash." StackOverflow.com. 
+		#stackoverflow.com/questions/2395284/round-a-divided-number-in-bash
+		avg=$((($sum + $numCount/2) / $numCount))
+		avgArray[$colNum]=$avg
+
+		# Get Median
+		# sort the values
+		# divide by the number of elements
+		# per specifications, if even count, median is the larger of the two numbers
+		# per specifications, output se tto standard output
+		remainder=$(($numCount % 2))
+	
+		# sort with piping caused errors when the number input went from 2 digits to 3 (number 100), so did a manual selection sort
+		# citation for sort: Kumar, Sandeep. "Selection Sort using Shell." It's all about Linux.
+		#technicalworldforyou.blogspot.com/2012/selction-sort-using-shell-script.html
+		for ((i=0; i<$numCount-1; i++))
+		do
+			small=${numArray[$i]}
+			index=$i
+			for ((j=i+1; j<$numCount; j++))
+			do
+				if ((numArray[j]<small))
+				then
+					small=${numArray[$j]}
+					index=$j
+				fi
+			done
+			temp=${numArray[$i]}
+			numArray[$i]=${numArray[$index]}
+			numArray[$index]=$temp
+		done
+	
+		# odd number
+		if [ $remainder != 0 ]
+		then
+			middle=$(expr $numCount / 2)
+			median=${numArray[$middle]}
+			medianArray[$colNum]=$median
+
+		fi
+
+		# even number
+		if [ $remainder == 0 ]
+		then
+			# sort
+			middle=$(expr $numCount / 2)
+		
+			# In order, per instructions, take largest. Due to starting at 0, this will be "middle" with no additional modifications required
+			median=${numArray[$middle]}
+			medianArray[$colNum]=$median
+		fi
+	
+		# increase to next column
+		colNum=$(expr $colNum + 1)
+	done
+
+	# print
+	echo "Averages:"
+	for x in "${avgArray[@]}"
+	do
+		echo "${x}"
+	done | column
+
+	echo "Medians:"
+	for x in "${medianArray[@]}"
+	do
+		echo "${x}"
+	done | column
+
+	
+fi
+
+# get rid of the temp file I created
+rm -f $tempStorage
